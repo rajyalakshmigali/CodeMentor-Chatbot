@@ -66,19 +66,43 @@ export default function Page() {
     setMobileOpen(false)
   }
 
-  function sendMessage() {
+  async function sendMessage() {
     const text = draft.trim()
     if (!text || isGenerating) return
     const userMessage: Message = { role: 'user', content: text }
-    const reply: Message = { role: 'assistant', content: 'I can help with that. I\'ll break the problem down clearly, call out assumptions, and include an example where it is useful.\n\nWhat language or codebase should we use for the solution?' }
-    setConversations((items) => items.map((conversation) => conversation.id === activeId ? { ...conversation, title: conversation.messages.length ? conversation.title : text.slice(0, 38), messages: [...conversation.messages, userMessage] } : conversation))
+    const conversationId = activeId
+    const nextMessages = [...(conversations.find((conversation) => conversation.id === conversationId)?.messages ?? []), userMessage]
+    setConversations((items) => items.map((conversation) => conversation.id === conversationId ? { ...conversation, title: conversation.messages.length ? conversation.title : text.slice(0, 38), messages: [...conversation.messages, userMessage] } : conversation))
     setDraft('')
     setAttachedFile(null)
     setIsGenerating(true)
-    window.setTimeout(() => {
-      setConversations((items) => items.map((conversation) => conversation.id === activeId ? { ...conversation, messages: [...conversation.messages, reply] } : conversation))
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: nextMessages }),
+      })
+      if (!response.ok || !response.body) throw new Error('The assistant could not respond.')
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let assistantContent = ''
+      setConversations((items) => items.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { role: 'assistant', content: '' }] } : conversation))
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        assistantContent += decoder.decode(value, { stream: true })
+        setConversations((items) => items.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages.slice(0, -1), { role: 'assistant', content: assistantContent }] } : conversation))
+      }
+      if (!assistantContent.trim()) {
+        setConversations((items) => items.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages.slice(0, -1), { role: 'assistant', content: 'The AI service did not return an answer. Please enable billing for Vercel AI Gateway, then try again.' }] } : conversation))
+      }
+    } catch {
+      setConversations((items) => items.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages.slice(0, -1), { role: 'assistant', content: 'I could not reach the AI service. Please try again.' }] } : conversation))
+    } finally {
       setIsGenerating(false)
-    }, 650)
+    }
   }
 
   function copyMessage(content: string) {
