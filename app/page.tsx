@@ -27,14 +27,7 @@ type Message = { role: 'user' | 'assistant'; content: string; attachment?: strin
 type Conversation = { id: number; title: string; group: string; messages: Message[] }
 
 const initialConversations: Conversation[] = [
-  { id: 1, title: 'Explain async/await in Python', group: 'Today', messages: [
-    { role: 'user', content: 'Can you explain async/await in Python with a practical example?' },
-    { role: 'assistant', content: 'Absolutely. Think of `async` and `await` as a way to pause one task while it waits for something slow, like a network response, without blocking the rest of your program.\n\n```python\nimport asyncio\n\nasync def fetch_user(user_id):\n    await asyncio.sleep(1)  # Simulate I/O\n    return {"id": user_id, "name": "Ada"}\n\nasync def main():\n    users = await asyncio.gather(\n        fetch_user(1),\n        fetch_user(2),\n    )\n    print(users)\n\nasyncio.run(main())\n```\n\n`async def` creates a coroutine, and `await` yields control while that coroutine is waiting. `asyncio.gather` runs both requests concurrently, so the total wait is about one second instead of two.' },
-  ] },
-  { id: 2, title: 'Review binary search implementation', group: 'Today', messages: [{ role: 'user', content: 'Review my binary search implementation for edge cases.' }, { role: 'assistant', content: 'Share your implementation and I will check correctness, boundary conditions, complexity, and readability.' }] },
-  { id: 3, title: 'Debug Java null pointer', group: 'Yesterday', messages: [{ role: 'user', content: 'Help me debug a NullPointerException in Java.' }, { role: 'assistant', content: 'Paste the stack trace and the smallest relevant code sample.' }] },
-  { id: 4, title: 'Optimize SQL query', group: 'Yesterday', messages: [{ role: 'user', content: 'How can I optimize a slow SQL query?' }, { role: 'assistant', content: 'Start with the query plan, indexes, and the cardinality of the filtered columns.' }] },
-  { id: 5, title: 'Explain a project brief', group: 'Previous 7 Days', messages: [{ role: 'user', content: 'Summarize the attached project brief.' }, { role: 'assistant', content: 'I can summarize it and cite the relevant pages once you upload the document.' }] },
+  { id: 1, title: 'New chat', group: 'Today', messages: [] },
 ]
 
 function formatContent(content: string) {
@@ -55,7 +48,9 @@ export default function Page() {
   const [copied, setCopied] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const active = conversations.find((conversation) => conversation.id === activeId) ?? conversations[0]
   const visibleGroups = useMemo(() => conversations.filter((conversation) => conversation.title.toLowerCase().includes(search.toLowerCase())).reduce<Record<string, Conversation[]>>((groups, conversation) => {
@@ -78,9 +73,10 @@ export default function Page() {
     const reply: Message = { role: 'assistant', content: 'I can help with that. I\'ll break the problem down clearly, call out assumptions, and include an example where it is useful.\n\nWhat language or codebase should we use for the solution?' }
     setConversations((items) => items.map((conversation) => conversation.id === activeId ? { ...conversation, title: conversation.messages.length ? conversation.title : text.slice(0, 38), messages: [...conversation.messages, userMessage] } : conversation))
     setDraft('')
+    setAttachedFile(null)
     setIsGenerating(true)
     window.setTimeout(() => {
-      setConversations((items) => items.map((conversation) => conversation.id === activeId ? { ...conversation, messages: [...conversation.messages, userMessage, reply] } : conversation))
+      setConversations((items) => items.map((conversation) => conversation.id === activeId ? { ...conversation, messages: [...conversation.messages, reply] } : conversation))
       setIsGenerating(false)
     }, 650)
   }
@@ -110,7 +106,7 @@ export default function Page() {
       <div className="message-scroller">
         {active.messages.length === 0 ? <div className="empty-state"><div className="empty-mark"><Sparkles /></div><p className="eyebrow">YOUR AI CODING MENTOR</p><h1>What are you building today?</h1><p className="empty-copy">Ask questions, debug code, review an approach, or drop in a document to get started.</p><div className="prompt-suggestions"><button onClick={() => setDraft('Explain this code to me like I am a beginner')}><FileCode2 /><span><strong>Explain code</strong><small>Understand any snippet</small></span></button><button onClick={() => setDraft('Help me debug this error: ')}><Code2 /><span><strong>Debug an error</strong><small>Find the root cause</small></span></button><button onClick={() => setDraft('Review my implementation for edge cases')}><Sparkles /><span><strong>Review an approach</strong><small>Improve your solution</small></span></button></div></div> : <div className="messages">{active.messages.map((message, index) => <article className={`message ${message.role}`} key={`${active.id}-${index}`}><div className="message-avatar">{message.role === 'assistant' ? <Code2 /> : 'You'}</div><div className="message-body"><div className="message-meta"><strong>{message.role === 'assistant' ? 'CodeMentor AI' : 'You'}</strong><span>{message.role === 'assistant' ? 'Just now' : 'Just now'}</span></div><div className="message-content">{formatContent(message.content)}</div>{message.role === 'assistant' && <div className="message-actions"><button onClick={() => copyMessage(message.content)}>{copied ? <Check /> : <Clipboard />} {copied ? 'Copied' : 'Copy'}</button><button><ArrowUp /> Regenerate</button></div>}</div></article>)}{isGenerating && <article className="message assistant"><div className="message-avatar"><Code2 /></div><div className="message-body"><div className="message-meta"><strong>CodeMentor AI</strong><span>Thinking</span></div><div className="typing"><i /><i /><i /></div></div></article>}</div>}
       </div>
-      <div className="composer-wrap"><div className="composer"><div className="attachment-row"><span className="file-chip"><FileText /> project-context.md <button aria-label="Remove attachment"><X /></button></span></div><textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); sendMessage() } }} placeholder="Ask anything about programming..." rows={1} /><div className="composer-bottom"><div className="composer-tools"><button className="tool-button" aria-label="Attach file"><Paperclip /></button><span>Press <kbd>Enter</kbd> to send <span className="muted">·</span> <kbd>Shift + Enter</kbd> for a new line</span></div><button className="send-button" onClick={isGenerating ? () => setIsGenerating(false) : sendMessage} aria-label={isGenerating ? 'Stop generating' : 'Send message'}>{isGenerating ? <Square /> : <ArrowUp />}</button></div></div><p className="disclaimer">CodeMentor AI can make mistakes. Check important code and sources.</p></div>
+      <div className="composer-wrap"><div className="composer"><div className="attachment-row">{attachedFile && <span className="file-chip"><FileText /> {attachedFile.name} <button onClick={() => setAttachedFile(null)} aria-label="Remove attachment"><X /></button></span>}</div><textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); sendMessage() } }} placeholder="Ask anything about programming..." rows={1} /><div className="composer-bottom"><div className="composer-tools"><input ref={fileInputRef} className="visually-hidden" type="file" onChange={(event) => setAttachedFile(event.target.files?.[0] ?? null)} /><button className="tool-button" onClick={() => fileInputRef.current?.click()} aria-label="Attach file"><Paperclip /></button><span>Press <kbd>Enter</kbd> to send <span className="muted">·</span> <kbd>Shift + Enter</kbd> for a new line</span></div><button className="send-button" onClick={isGenerating ? () => setIsGenerating(false) : sendMessage} aria-label={isGenerating ? 'Stop generating' : 'Send message'}>{isGenerating ? <Square /> : <ArrowUp />}</button></div></div><p className="disclaimer">CodeMentor AI can make mistakes. Check important code and sources.</p></div>
     </main>
   </div>
 }
